@@ -1,0 +1,8 @@
+.terraform
+build
+node_modules
+*.lock.hcl
+package.json
+*.tfstate*
+*.gz
+*.7z
