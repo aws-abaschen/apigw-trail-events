@@ -144,30 +144,17 @@ data "archive_file" "lambda" {
   output_path = "build/lambda_function_payload.zip"
 }
 
-resource "terraform_data" "packaging" {
-  provisioner "local-exec" {
-    command = <<EOT
-npx esbuild --bundle lambda.mjs --target=node18 --platform=node 
---format=esm --outfile=build/lambda.mjs 
-"--banner:js=import { createRequire } from 'module'; const require = createRequire(import.meta.url);" 
---main-fields=module,main
-'--external:@aws-sdk/*' --external:aws-lambda
-EOT
-  }
-}
-
 resource "aws_lambda_function" "echo_event" {
   filename      = data.archive_file.lambda.output_path
   function_name = "echo_event"
   role          = aws_iam_role.iam_for_lambda.arn
   handler       = "lambda.handler"
-  source_code_hash = data.archive_file.lambda.output_sha256
+  source_code_hash = md5(file(data.archive_file.lambda.source_file))
 
   runtime = "nodejs18.x"
   depends_on = [
     aws_iam_role_policy_attachment.lambda_logs,
-    aws_cloudwatch_log_group.lambda_logs,
-    terraform_data.packaging
+    aws_cloudwatch_log_group.lambda_logs
   ]
 }
 
