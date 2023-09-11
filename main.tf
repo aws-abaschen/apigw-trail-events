@@ -1,12 +1,12 @@
 locals {
-  trail_name   = "poc_mgt_trail"
-  trail_prefix = "prefix"
-  api_event_log_group = "/poc/api-trail-events"
-  lambda_to_log_stream_name = "trail-to-log-stream"
+  trail_name                              = "poc_mgt_trail"
+  trail_prefix                            = "prefix"
+  log_group__api_trail_events             = "api-trail-events"
+  lambda__trail_event_to_log_stream__name = "trail_event_to_log_stream"
 }
 
 resource "aws_cloudwatch_log_group" "trail" {
-  name = "write-mgt-events-trail"
+  name = "${var.log_group_prefix}/write-mgt-events-trail"
 }
 
 data "aws_iam_policy_document" "cloudtrail_assume_role_policy" {
@@ -105,9 +105,9 @@ resource "aws_cloudtrail" "only_management" {
   }
 }
 
-resource "aws_lambda_permission" "trail_invoke_echo" {
+resource "aws_lambda_permission" "trail_invoke_lambda" {
   action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.echo_event.arn
+  function_name = aws_lambda_function.trail_event_to_log_stream.arn
   principal     = "logs.amazonaws.com"
   source_arn    = "${aws_cloudwatch_log_group.trail.arn}:*"
 }
@@ -116,8 +116,8 @@ resource "aws_cloudwatch_log_subscription_filter" "test_lambdafunction_logfilter
   //role_arn        = aws_iam_role.iam_for_lambda.arn
   log_group_name  = aws_cloudwatch_log_group.trail.name
   filter_pattern  = "{$.eventSource = \"apigateway.amazonaws.com\"}"
-  destination_arn = aws_lambda_function.echo_event.arn
-  depends_on      = [aws_lambda_permission.trail_invoke_echo]
+  destination_arn = aws_lambda_function.trail_event_to_log_stream.arn
+  depends_on      = [aws_lambda_permission.trail_invoke_lambda]
 }
 
 data "aws_iam_policy_document" "assume_role" {
@@ -144,19 +144,19 @@ data "archive_file" "lambda" {
   output_path = "build/lambda_function_payload.zip"
 }
 
-resource "aws_cloudwatch_log_group" "api_stream" {
-  name = local.api_event_log_group
+resource "aws_cloudwatch_log_group" "api_trail_events" {
+  name = "${var.log_group_prefix}/${local.log_group__api_trail_events}"
 }
 
-resource "aws_lambda_function" "echo_event" {
-  filename      = data.archive_file.lambda.output_path
-  function_name = local.lambda_to_log_stream_name
-  role          = aws_iam_role.iam_for_lambda.arn
-  handler       = "lambda.handler"
+resource "aws_lambda_function" "trail_event_to_log_stream" {
+  filename         = data.archive_file.lambda.output_path
+  function_name    = local.lambda__trail_event_to_log_stream__name
+  role             = aws_iam_role.iam_for_lambda.arn
+  handler          = "lambda.handler"
   source_code_hash = md5(file(data.archive_file.lambda.source_file))
   environment {
     variables = {
-      LOG_GROUP_NAME=aws_cloudwatch_log_group.api_stream.name
+      LOG_GROUP_NAME = aws_cloudwatch_log_group.api_trail_events.name
     }
   }
   runtime = "nodejs18.x"
@@ -177,7 +177,7 @@ data "aws_iam_policy_document" "lambda_logging" {
     ]
 
     resources = [
-      "arn:${data.aws_partition.current.partition}:logs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/${local.lambda_to_log_stream_name}:*"
+      "arn:${data.aws_partition.current.partition}:logs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/${local.lambda__trail_event_to_log_stream__name}:*"
     ]
   }
 
@@ -190,7 +190,7 @@ data "aws_iam_policy_document" "lambda_logging" {
       "logs:PutLogEvents",
     ]
 
-    resources = ["arn:${data.aws_partition.current.partition}:logs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:log-group:${local.api_event_log_group}:log-stream:*"]
+    resources = ["arn:${data.aws_partition.current.partition}:logs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:log-group:${local.log_group__api_trail_events}:log-stream:*"]
   }
 }
 
@@ -208,7 +208,7 @@ resource "aws_iam_role_policy_attachment" "lambda_logs" {
 
 data "aws_iam_policy_document" "lambda_queryapigw" {
   statement {
-    effect = "Allow"
+    effect  = "Allow"
     actions = ["apigateway:GET"]
 
     resources = [

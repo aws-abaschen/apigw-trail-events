@@ -127,5 +127,5 @@ resource "aws_api_gateway_stage" "v1" {
 
 resource "aws_cloudwatch_log_stream" "api_stream" {
   name = aws_api_gateway_rest_api.api.id
-  log_group_name = aws_cloudwatch_log_group.api_stream.name
+  log_group_name = aws_cloudwatch_log_group.api_trail_events.name
 }
