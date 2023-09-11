@@ -21,7 +21,7 @@ export const handler = async ({ awslogs: { data } }) => {
                 switch (eventName) {
                     case "CreateResource": await log(`Created resource ${responseElements.path}`, restApiId); break;
                     case "DeleteResource": await log(`Deleted resource with id ${requestParameters.resourceId}`, restApiId); break;
-                    case "PutMethod": await log(`Adding method ${requestParameters.httpMethod} to resource ${requestParameters.resourceId}, authorizationType: ${requestParameters.authorizationType}`, restApiId); break;
+                    case "PutMethod": await log(`Adding method ${requestParameters.httpMethod} to resource ${requestParameters.resourceId}, authorizationType: ${requestParameters.putMethodInput.authorizationType}, apiKeyRequired: ${requestParameters.putMethodInput.apiKeyRequired}`, restApiId); break;
                     case "UpdateMethod": await log(`Updating method ${requestParameters.httpMethod} of resource ${requestParameters.resourceId}, Input: ${JSON.stringify(requestParameters.updateMethodInput)}`, restApiId); break;
                     case "PutIntegration": await log(`Updating method ${requestParameters.httpMethod} of resource ${requestParameters.resourceId}, Input: ${JSON.stringify(requestParameters.putIntegrationInput)}`, restApiId); break;
                     case "UpdateMethodResponse": await log(`Updating method response ${requestParameters.httpMethod} of resource ${requestParameters.resourceId}, Input: ${JSON.stringify(requestParameters.updateMethodResponseInput)}`, restApiId); break;
