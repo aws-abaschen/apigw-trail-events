@@ -124,3 +124,8 @@ resource "aws_api_gateway_stage" "v1" {
   rest_api_id   = aws_api_gateway_rest_api.api.id
   stage_name    = "v1"
 }
+
+resource "aws_cloudwatch_log_stream" "api_stream" {
+  name = aws_api_gateway_rest_api.api.id
+  log_group_name = aws_cloudwatch_log_group.api_stream.name
+}

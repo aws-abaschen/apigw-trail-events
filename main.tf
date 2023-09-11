@@ -1,9 +1,12 @@
-resource "aws_cloudwatch_log_group" "trail" {
-  name = "write-mgt-events-trail"
+locals {
+  trail_name   = "poc_mgt_trail"
+  trail_prefix = "prefix"
+  api_event_log_group = "/poc/api-trail-events"
+  lambda_to_log_stream_name = "trail-to-log-stream"
 }
 
-resource "aws_cloudwatch_log_group" "lambda_logs" {
-  name = "/aws/lambda/deployment_events"
+resource "aws_cloudwatch_log_group" "trail" {
+  name = "write-mgt-events-trail"
 }
 
 data "aws_iam_policy_document" "cloudtrail_assume_role_policy" {
@@ -16,10 +19,7 @@ data "aws_iam_policy_document" "cloudtrail_assume_role_policy" {
     }
   }
 }
-locals {
-  trail_name   = "poc_mgt_trail"
-  trail_prefix = "prefix"
-}
+
 data "aws_iam_policy_document" "cloudtrail_inline_policy" {
   statement {
     actions = ["logs:CreateLogStream", "logs:PutLogEvents"]
@@ -115,7 +115,7 @@ resource "aws_cloudwatch_log_subscription_filter" "test_lambdafunction_logfilter
   name = "fn-api-event-trail"
   //role_arn        = aws_iam_role.iam_for_lambda.arn
   log_group_name  = aws_cloudwatch_log_group.trail.name
-  filter_pattern  = "{($.eventSource = \"apigateway.amazonaws.com\" && $.requestParameters.restApiId = \"${aws_api_gateway_rest_api.api.id}\") && ($.eventName = \"CreateDeployment\")}"
+  filter_pattern  = "{$.eventSource = \"apigateway.amazonaws.com\"}"
   destination_arn = aws_lambda_function.echo_event.arn
   depends_on      = [aws_lambda_permission.trail_invoke_echo]
 }
@@ -144,21 +144,29 @@ data "archive_file" "lambda" {
   output_path = "build/lambda_function_payload.zip"
 }
 
+resource "aws_cloudwatch_log_group" "api_stream" {
+  name = local.api_event_log_group
+}
+
 resource "aws_lambda_function" "echo_event" {
   filename      = data.archive_file.lambda.output_path
-  function_name = "echo_event"
+  function_name = local.lambda_to_log_stream_name
   role          = aws_iam_role.iam_for_lambda.arn
   handler       = "lambda.handler"
   source_code_hash = md5(file(data.archive_file.lambda.source_file))
-
+  environment {
+    variables = {
+      LOG_GROUP_NAME=aws_cloudwatch_log_group.api_stream.name
+    }
+  }
   runtime = "nodejs18.x"
   depends_on = [
-    aws_iam_role_policy_attachment.lambda_logs,
-    aws_cloudwatch_log_group.lambda_logs
+    aws_iam_role_policy_attachment.lambda_logs
   ]
 }
 
 data "aws_iam_policy_document" "lambda_logging" {
+  // Lambda logs
   statement {
     effect = "Allow"
 
@@ -168,14 +176,28 @@ data "aws_iam_policy_document" "lambda_logging" {
       "logs:PutLogEvents",
     ]
 
-    resources = ["arn:aws:logs:*:*:*"]
+    resources = [
+      "arn:${data.aws_partition.current.partition}:logs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/${local.lambda_to_log_stream_name}:*"
+    ]
+  }
+
+  // API Gateway trail logging
+  statement {
+    effect = "Allow"
+
+    actions = [
+      "logs:CreateLogStream",
+      "logs:PutLogEvents",
+    ]
+
+    resources = ["arn:${data.aws_partition.current.partition}:logs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:log-group:${local.api_event_log_group}:log-stream:*"]
   }
 }
 
 resource "aws_iam_policy" "lambda_logging" {
   name        = "lambda_logging"
   path        = "/"
-  description = "IAM policy for logging from a lambda"
+  description = "IAM policy for logging API Gateway trail events from a lambda"
   policy      = data.aws_iam_policy_document.lambda_logging.json
 }
 

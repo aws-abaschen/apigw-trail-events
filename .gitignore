@@ -6,3 +6,8 @@ package.json
 *.tfstate*
 *.gz
 *.7z
+*.log
+
+## to keep it simple, we avoid building lambdas for now
+package.json
+yarn.lock

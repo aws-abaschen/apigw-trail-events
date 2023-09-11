@@ -1,33 +1,46 @@
 import { gunzipSync } from 'zlib';
-import { ApiGatewayV2Client, GetDeploymentCommand } from "@aws-sdk/client-apigatewayv2";
 
-const client = new ApiGatewayV2Client({});
+import { CloudWatchLogs } from "@aws-sdk/client-cloudwatch-logs";
+const cloudwatch = new CloudWatchLogs({});
 
-// { // GetDeploymentResponse
-//   AutoDeployed: true || false,
-//   CreatedDate: new Date("TIMESTAMP"),
-//   DeploymentId: "STRING_VALUE",
-//   DeploymentStatus: "PENDING" || "FAILED" || "DEPLOYED",
-//   DeploymentStatusMessage: "STRING_VALUE",
-//   Description: "STRING_VALUE",
-// };
 
+const logGroupName = process.env.LOG_GROUP_NAME;
 export const handler = async ({ awslogs: { data } }) => {
     try {
         const eventString = gunzipSync(Buffer.from(data, 'base64')).toString('utf8');
 
         const event = JSON.parse(JSON.parse(eventString).logEvents[0].message);
         console.log(event);
-        const { responseElements: { deploymentUpdate: { restApiId, deploymentId } } } = event;
+        const { requestParameters: { restApiId } } = event;
 
-        const input = {
-            ApiId: restApiId,
-            DeploymentId: deploymentId
+        const message = JSON.stringify({
+            eventTime: new Date(event.eventTime).toISOString(),
+            eventName: event.eventName,
+            eventSource: event.eventSource,
+            requestParameters: event.requestParameters,
+            responseElements: event.responseElements
+        })
+
+
+        // Put the formatted log messages into the CloudWatch LogStream
+
+        const params = {
+            logGroupName: logGroupName,
+            logStreamName: `${restApiId}`,
+            logEvents: [{
+                message,
+                timestamp: Date.now(), // Assign a timestamp to each log message
+            }],
         };
-        const command = new GetDeploymentCommand(input);
-        const response = await client.send(command);
-        console.log(JSON.stringify(response));
+
+        try {
+            await cloudwatch.putLogEvents(params);
+            console.log(`Logged event for  to CloudWatch LogStream: ${restApiId}`);
+        } catch (error) {
+            console.error(`Error logging events to CloudWatch LogStream: ${error}`);
+        }
     } catch (error) {
         console.error(error)
     }
 }
+
