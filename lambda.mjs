@@ -34,7 +34,7 @@ export const handler = async ({ awslogs: { data } }) => {
                     switch (eventName) {
                         case "CreateFunctionUrlConfig": await log(`Created functionUrlConfig with url: ${responseElements.functionUrl}, auth_type: ${responseElements.authType}`, functionName); break;
                         case "DeleteFunctionUrlConfig": await log(`Deleted functionUrlConfig for ${functionName}`, functionName); break;
-                        case "UpdateFunctionUrlConfig": await log(`Created functionUrlConfig with url: ${responseElements.functionUrl}, auth_type: ${responseElements.authType}`, functionName); break;
+                        case "UpdateFunctionUrlConfig": await log(`Updated functionUrlConfig with url: ${responseElements.functionUrl}, auth_type: ${responseElements.authType}`, functionName); break;
                         default: await log(`${eventName} - ${JSON.stringify(requestParameters)}`, functionName);
                     }
                 }
