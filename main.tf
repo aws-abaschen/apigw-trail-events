@@ -1,23 +1,5 @@
-locals {
-  trail_name                              = "poc_mgt_trail"
-  trail_prefix                            = "prefix"
-  log_group__api_trail_events             = "api-trail-events"
-  lambda__trail_event_to_log_stream__name = "trail_event_to_log_stream"
-}
-
 resource "aws_cloudwatch_log_group" "trail" {
   name = "${var.log_group_prefix}/write-mgt-events-trail"
-}
-
-data "aws_iam_policy_document" "cloudtrail_assume_role_policy" {
-  statement {
-    actions = ["sts:AssumeRole"]
-
-    principals {
-      type        = "Service"
-      identifiers = ["cloudtrail.amazonaws.com"]
-    }
-  }
 }
 
 data "aws_iam_policy_document" "cloudtrail_inline_policy" {
@@ -29,7 +11,7 @@ data "aws_iam_policy_document" "cloudtrail_inline_policy" {
   }
 }
 resource "aws_iam_role" "trail-cloudwatch" {
-  assume_role_policy = data.aws_iam_policy_document.cloudtrail_assume_role_policy.json
+  assume_role_policy = data.aws_iam_policy_document.assume_role_cloudtrail.json
 
   inline_policy {
     name   = "policy_log_group"
@@ -57,7 +39,7 @@ data "aws_iam_policy_document" "api-gateway-trail" {
     condition {
       test     = "StringEquals"
       variable = "AWS:SourceArn"
-      values   = ["arn:${data.aws_partition.current.partition}:cloudtrail:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:trail/${local.trail_name}"]
+      values   = ["arn:${data.aws_partition.current.partition}:cloudtrail:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:trail/${var.trail_name}"]
     }
   }
 
@@ -71,7 +53,7 @@ data "aws_iam_policy_document" "api-gateway-trail" {
     }
 
     actions   = ["s3:PutObject"]
-    resources = ["${aws_s3_bucket.api-gateway-trail.arn}/${local.trail_prefix}/AWSLogs/${data.aws_caller_identity.current.account_id}/*"]
+    resources = ["${aws_s3_bucket.api-gateway-trail.arn}/${var.trail_prefix}/AWSLogs/${data.aws_caller_identity.current.account_id}/*"]
 
     condition {
       test     = "StringEquals"
@@ -81,7 +63,7 @@ data "aws_iam_policy_document" "api-gateway-trail" {
     condition {
       test     = "StringEquals"
       variable = "AWS:SourceArn"
-      values   = ["arn:${data.aws_partition.current.partition}:cloudtrail:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:trail/${local.trail_name}"]
+      values   = ["arn:${data.aws_partition.current.partition}:cloudtrail:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:trail/${var.trail_name}"]
     }
   }
 }
@@ -91,11 +73,11 @@ resource "aws_s3_bucket_policy" "api-gateway-trail" {
 }
 
 resource "aws_cloudtrail" "only_management" {
-  name                          = local.trail_name
+  name                          = var.trail_name
   s3_bucket_name                = aws_s3_bucket.api-gateway-trail.id
   include_global_service_events = true
   enable_logging                = true
-  s3_key_prefix                 = local.trail_prefix
+  s3_key_prefix                 = var.trail_prefix
   cloud_watch_logs_group_arn    = "${aws_cloudwatch_log_group.trail.arn}:*"
   cloud_watch_logs_role_arn     = aws_iam_role.trail-cloudwatch.arn
   event_selector {
@@ -105,37 +87,10 @@ resource "aws_cloudtrail" "only_management" {
   }
 }
 
-resource "aws_lambda_permission" "trail_invoke_lambda" {
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.trail_event_to_log_stream.arn
-  principal     = "logs.amazonaws.com"
-  source_arn    = "${aws_cloudwatch_log_group.trail.arn}:*"
-}
-resource "aws_cloudwatch_log_subscription_filter" "test_lambdafunction_logfilter" {
-  name = "fn-api-event-trail"
-  //role_arn        = aws_iam_role.iam_for_lambda.arn
-  log_group_name  = aws_cloudwatch_log_group.trail.name
-  filter_pattern  = "{$.eventSource = \"apigateway.amazonaws.com\"}"
-  destination_arn = aws_lambda_function.trail_event_to_log_stream.arn
-  depends_on      = [aws_lambda_permission.trail_invoke_lambda]
-}
-
-data "aws_iam_policy_document" "assume_role" {
-  statement {
-    effect = "Allow"
-
-    principals {
-      type        = "Service"
-      identifiers = ["lambda.amazonaws.com"]
-    }
-
-    actions = ["sts:AssumeRole"]
-  }
-}
 
 resource "aws_iam_role" "iam_for_lambda" {
   name               = "iam_for_lambda"
-  assume_role_policy = data.aws_iam_policy_document.assume_role.json
+  assume_role_policy = data.aws_iam_policy_document.assume_role_lambda.json
 }
 
 data "archive_file" "lambda" {
@@ -145,12 +100,12 @@ data "archive_file" "lambda" {
 }
 
 resource "aws_cloudwatch_log_group" "api_trail_events" {
-  name = "${var.log_group_prefix}/${local.log_group__api_trail_events}"
+  name = "${var.log_group_prefix}/${var.log_group__api_trail_events}"
 }
 
 resource "aws_lambda_function" "trail_event_to_log_stream" {
   filename         = data.archive_file.lambda.output_path
-  function_name    = local.lambda__trail_event_to_log_stream__name
+  function_name    = var.lambda__trail_event_to_log_stream__name
   role             = aws_iam_role.iam_for_lambda.arn
   handler          = "lambda.handler"
   source_code_hash = md5(file(data.archive_file.lambda.source_file))
@@ -177,7 +132,7 @@ data "aws_iam_policy_document" "lambda_logging" {
     ]
 
     resources = [
-      "arn:${data.aws_partition.current.partition}:logs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/${local.lambda__trail_event_to_log_stream__name}:*"
+      "arn:${data.aws_partition.current.partition}:logs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/${var.lambda__trail_event_to_log_stream__name}:*"
     ]
   }
 
@@ -190,7 +145,7 @@ data "aws_iam_policy_document" "lambda_logging" {
       "logs:PutLogEvents",
     ]
 
-    resources = ["arn:${data.aws_partition.current.partition}:logs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:log-group:${local.log_group__api_trail_events}:log-stream:*"]
+    resources = ["arn:${data.aws_partition.current.partition}:logs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:log-group:${aws_cloudwatch_log_group.api_trail_events.name}:*"]
   }
 }
 
@@ -204,29 +159,4 @@ resource "aws_iam_policy" "lambda_logging" {
 resource "aws_iam_role_policy_attachment" "lambda_logs" {
   role       = aws_iam_role.iam_for_lambda.name
   policy_arn = aws_iam_policy.lambda_logging.arn
-}
-
-data "aws_iam_policy_document" "lambda_queryapigw" {
-  statement {
-    effect  = "Allow"
-    actions = ["apigateway:GET"]
-
-    resources = [
-      "arn:aws:apigateway:*::/apis/*/routes/*",
-      "arn:aws:apigateway:*::/domainnames/*/apimappings",
-      "arn:aws:apigateway:*::/apis/*/deployments",
-      "arn:aws:apigateway:*::/apis/*/deployments/*"
-    ]
-  }
-}
-
-resource "aws_iam_policy" "lambda_queryapigw" {
-  name        = "lambda_queryapigw"
-  path        = "/"
-  description = "IAM policy for querying deployment from a lambda"
-  policy      = data.aws_iam_policy_document.lambda_queryapigw.json
-}
-resource "aws_iam_role_policy_attachment" "lambda_queryapigw" {
-  role       = aws_iam_role.iam_for_lambda.name
-  policy_arn = aws_iam_policy.lambda_queryapigw.arn
 }
